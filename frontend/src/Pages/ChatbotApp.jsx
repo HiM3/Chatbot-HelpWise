@@ -4,7 +4,7 @@ import Mode from "../Components/Mode";
 import { motion } from "framer-motion";
 import { chatService } from '../services/api';
 import { toast } from 'react-hot-toast';
-
+import { useForm } from 'react-hook-form';
 import {
   FaRobot,
   FaPlus,
@@ -20,10 +20,15 @@ const ChatbotApp = () => {
   const navigate = useNavigate();
   const [chatTitle, setChatTitle] = useState("New Conversation");
   const [darkMode, setDarkMode] = useState(false);
-  const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const { register, handleSubmit, reset, setValue } = useForm({
+    defaultValues: {
+      message: ''
+    }
+  });
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -42,30 +47,44 @@ const ChatbotApp = () => {
   const loadChatHistory = async () => {
     try {
       const response = await chatService.getChatHistory();
-      setMessages(response.data);
+      if (response.data && Array.isArray(response.data.chats)) {
+        setMessages(response.data.chats);
+      } else if (response.data && Array.isArray(response.data)) {
+        setMessages(response.data);
+      } else {
+        setMessages([]);
+        console.warn('Invalid chat history format received:', response.data);
+      }
     } catch (error) {
+      console.error('Failed to load chat history:', error);
       toast.error('Failed to load chat history');
+      setMessages([]);
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!message.trim()) return;
+  const onSubmit = async (data) => {
+    if (!data.message.trim()) return;
     if (!isAuthenticated) {
       toast.error('Please login to send messages');
       navigate('/login');
       return;
     }
 
-    const newMessages = [...messages, { text: message, from: 'user' }];
+    const newMessages = [...messages, { text: data.message, from: 'user' }];
     setMessages(newMessages);
-    setMessage('');
+    reset();
     setLoading(true);
 
     try {
-      const response = await chatService.sendMessage(message);
-      setMessages([...newMessages, { text: response.data.reply, from: 'bot' }]);
+      const response = await chatService.sendMessage(data.message);
+      if (response.data && response.data.reply) {
+        setMessages([...newMessages, { text: response.data.reply, from: 'bot' }]);
+      } else {
+        throw new Error('Invalid response format');
+      }
     } catch (error) {
-      toast.error('Failed to send message');
+      console.error('Failed to send message:', error);
+      toast.error(error.response?.data?.message || 'Failed to send message');
       setMessages([
         ...newMessages,
         { text: '❌ Error: Could not connect to chatbot.', from: 'bot' },
@@ -75,9 +94,13 @@ const ChatbotApp = () => {
     }
   };
 
+  const handleQuickMessage = (text) => {
+    setValue('message', text);
+  };
+
   return (
     <div className={`h-screen flex justify-center items-center font-[Segoe_UI,Tahoma,Geneva,Verdana,sans-serif] transition-colors duration-300 ${darkMode ? "bg-[#1c1e26] text-[#f4f4f4]" : "bg-[#f4f8fb] text-[#0d1b2a]"}`}>
-      <motion.div 
+      <motion.div
         className="flex w-[95%] max-w-[1400px] h-[95%] rounded-lg overflow-hidden shadow-xl"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -109,8 +132,8 @@ const ChatbotApp = () => {
           </div>
 
           <div className="mt-auto flex flex-col gap-2">
-            <button 
-              className="bg-transparent border-none text-base flex items-center gap-2 cursor-pointer text-inherit transition-colors duration-200 hover:text-[#4e7cff]" 
+            <button
+              className="bg-transparent border-none text-base flex items-center gap-2 cursor-pointer text-inherit transition-colors duration-200 hover:text-[#4e7cff]"
               onClick={async () => {
                 try {
                   await chatService.clearHistory();
@@ -146,7 +169,7 @@ const ChatbotApp = () => {
               </div>
               <div className="flex gap-2">
                 {isAuthenticated ? (
-                  <button 
+                  <button
                     className={`
                       bg-[#4e7cff] text-white py-2 px-4 rounded-md text-base flex items-center justify-center gap-2 cursor-pointer shadow-md 
                       transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg 
@@ -161,7 +184,7 @@ const ChatbotApp = () => {
                     Logout
                   </button>
                 ) : (
-                  <button 
+                  <button
                     className={`
                       bg-[#4e7cff] text-white py-2 px-4 rounded-md text-base flex items-center justify-center gap-2 cursor-pointer shadow-md 
                       transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg 
@@ -177,7 +200,7 @@ const ChatbotApp = () => {
           </div>
 
           <div className="flex-1 flex flex-col p-5 overflow-y-auto">
-            {messages.length === 0 ? (
+            {!messages || messages.length === 0 ? (
               <div className="text-center mt-12">
                 <h1 className="text-3xl mb-2">Welcome to HelpWise AI Chatbot</h1>
                 <p className="text-base mb-5 text-inherit">Ask anything. Powered by OpenAI.</p>
@@ -188,7 +211,7 @@ const ChatbotApp = () => {
                       transition-colors duration-300 hover:bg-[#aaa] 
                       dark:bg-[#444] dark:text-white
                     `}
-                    onClick={() => setMessage("Tell me a joke")}
+                    onClick={() => handleQuickMessage("Tell me a joke")}
                   >
                     Tell me a joke
                   </button>
@@ -198,7 +221,7 @@ const ChatbotApp = () => {
                       transition-colors duration-300 hover:bg-[#aaa] 
                       dark:bg-[#444] dark:text-white
                     `}
-                    onClick={() => setMessage("Explain AI")}
+                    onClick={() => handleQuickMessage("Explain AI")}
                   >
                     Explain AI
                   </button>
@@ -208,14 +231,14 @@ const ChatbotApp = () => {
                       transition-colors duration-300 hover:bg-[#aaa] 
                       dark:bg-[#444] dark:text-white
                     `}
-                    onClick={() => setMessage("How to cook pasta?")}
+                    onClick={() => handleQuickMessage("How to cook pasta?")}
                   >
                     How to cook pasta?
                   </button>
                 </div>
               </div>
             ) : (
-              messages.map((msg, idx) => (
+              Array.isArray(messages) && messages.map((msg, idx) => (
                 <div key={idx} className={`
                   p-3 pr-4 mb-3 max-w-[80%] rounded-lg break-words
                   ${msg.from === 'user' ? 'self-end bg-[#3498db] text-white' : 'self-start bg-[#e1ecf9] text-black'}
@@ -227,7 +250,7 @@ const ChatbotApp = () => {
           </div>
 
           <div className="border-t border-[#ccc] p-4 bg-inherit">
-            <div className={`
+            <form onSubmit={handleSubmit(onSubmit)} className={`
               flex items-center rounded-3xl p-2.5 px-4 shadow-sm 
               bg-[#f1f4f8] border border-[#cdd9e5] transition-colors duration-300 
               dark:bg-[#3b3b3b] dark:border-[#555] dark:shadow-md
@@ -235,29 +258,31 @@ const ChatbotApp = () => {
               <textarea
                 rows="1"
                 placeholder="Type a message..."
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                {...register('message')}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendMessage();
+                    handleSubmit(onSubmit)();
                   }
                 }}
                 className={`
                   flex-1 resize-none border-none bg-transparent text-base py-2 px-0 
                   text-inherit outline-none font-inherit
                 `}
-              ></textarea>
-              <button title="Send" onClick={handleSendMessage}
+              />
+              <button
+                type="submit"
+                disabled={loading}
                 className={`
                   bg-transparent border-none text-lg cursor-pointer text-[#4e7cff] 
                   flex items-center justify-center p-1.5 transition-colors duration-300 
                   hover:text-[#375eda] dark:text-[#aac4ff] dark:hover:text-[#d0e0ff]
+                  disabled:opacity-50 disabled:cursor-not-allowed
                 `}
               >
                 <FaPaperPlane />
               </button>
-            </div>
+            </form>
 
             <div className="text-xs text-[#999] text-center mt-2">
               AI responses may be inaccurate. This chat is not stored on server.
